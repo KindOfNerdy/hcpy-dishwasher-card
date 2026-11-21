@@ -7,7 +7,7 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.1";
+const CARD_VERSION = "0.1.2";
 const MODES = ["full", "row"];
 const PARTS = ["options", "hints", "door"];
 
@@ -128,9 +128,11 @@ const TEXT = {
     abort: "Cancel program",
     start: "Start program",
     power_on: "Switch on",
+    power_off: "Switch off",
     close_door: "Close the door to start",
     allow_remote: "Allow remote start on the dishwasher",
     program: "Program",
+    delay_label: "Delayed start",
     delay_now: "Right away",
     delay_in: "In {time} · at {clock}",
     delay_less: "Start earlier",
@@ -164,6 +166,7 @@ const TEXT = {
     ed_device_id: "Dishwasher (empty = find it)",
     ed_starter_entity: "Extra switch next to the options, e.g. for your own start automation (optional)",
     ed_starter_name: "Name of that switch (empty = its entity name)",
+    ed_starter_icon: "Icon of that switch (empty = its entity icon)",
     ed_hide: "Hide parts",
     ed_hide_options: "Options",
     ed_hide_hints: "Hints",
@@ -220,9 +223,11 @@ const TEXT = {
     abort: "Programm abbrechen",
     start: "Programm starten",
     power_on: "Einschalten",
+    power_off: "Ausschalten",
     close_door: "Zum Starten die Tür schließen",
     allow_remote: "Fernstart an der Maschine freigeben",
     program: "Programm",
+    delay_label: "Startvorwahl",
     delay_now: "Sofort",
     delay_in: "In {time} · um {clock}",
     delay_less: "Früher starten",
@@ -256,6 +261,7 @@ const TEXT = {
     ed_device_id: "Spülmaschine (leer = selbst suchen)",
     ed_starter_entity: "Zusätzlicher Schalter neben den Optionen, z. B. für eine eigene Start-Automation (optional)",
     ed_starter_name: "Name dieses Schalters (leer = Name der Entität)",
+    ed_starter_icon: "Symbol dieses Schalters (leer = Symbol der Entität)",
     ed_hide: "Teile ausblenden",
     ed_hide_options: "Optionen",
     ed_hide_hints: "Hinweise",
@@ -304,6 +310,8 @@ class DishwasherCard extends HTMLElement {
       if (act === "abort") this._abort();
       if (act === "start") this._start();
       if (act === "power") this._press("power", entity, "switch", "turn_on", { entity_id: entity });
+      if (act === "power-off")
+        this._press("power-off", entity, "switch", "turn_off", { entity_id: entity }, { wait: SWITCH_WAIT_MS, ignored: "not_taken" });
       if (act === "delay") this._stepDelay(Number(el.dataset.dir));
       // the machine answers a switch within seconds; options a program does not allow it ignores silently
       if (act === "toggle")
@@ -327,6 +335,10 @@ class DishwasherCard extends HTMLElement {
     }
     this.shadowRoot.addEventListener("change", (e) => {
       if (e.target.matches?.("select[data-act='program']") && e.target.value) this._chooseProgram(e.target.value);
+      if (e.target.matches?.("select[data-act='delay-pick']")) {
+        this._delayMin = Number(e.target.value) || 0;
+        this._refresh();
+      }
     });
     // keep the card still while the program drop-down is open
     this.shadowRoot.addEventListener("focusin", (e) => {
@@ -359,6 +371,7 @@ class DishwasherCard extends HTMLElement {
         { name: "device_id", selector: { device: { filter: { integration: "mqtt" } } } },
         { name: "starter_entity", selector: { entity: { domain: ["input_boolean", "switch"] } } },
         { name: "starter_name", selector: { text: {} } },
+        { name: "starter_icon", selector: { icon: {} } },
         {
           name: "start_options",
           selector: {
@@ -548,7 +561,8 @@ class DishwasherCard extends HTMLElement {
     const min = Math.max(1, Math.round(sec / 60));
     const h = Math.floor(min / 60);
     const m = min % 60;
-    return h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
+    // no-break spaces: "2 h 25 min" never splits over two lines
+    return (h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`).replace(/ /g, "\u00a0");
   }
 
   _clock(sec) {
@@ -584,7 +598,7 @@ class DishwasherCard extends HTMLElement {
     } else if (state === "Ready" && remaining) {
       // when ready, the dishwasher already reports how long the preselected program takes
       detail = [program, this._t("takes", { time: this._dur(remaining) })];
-    } else if (!offline && !off) {
+    } else if (!offline) {
       detail = [program];
     }
     // during a program the chosen options are just part of the description
@@ -824,6 +838,13 @@ class DishwasherCard extends HTMLElement {
       ${busy ? this._spinner() : `<ha-icon icon="mdi:${ask ? "help" : "stop"}"></ha-icon>`}</button>`;
   }
 
+  // Full card only (the row keeps one button): switch off while on and no program runs.
+  _powerOffBtn(view) {
+    const e = this._dev.e;
+    if (!e.power || view.offline || view.off || RUNNING.includes(view.state)) return "";
+    return this._btn("power-off", "mdi:power", "power_off", "quiet", e.power);
+  }
+
   _btn(act, icon, label, cls, entity = "") {
     const busy = !!this._busy[act];
     const text = this._t(label);
@@ -873,7 +894,7 @@ class DishwasherCard extends HTMLElement {
           <div class="status" ${color ? `style="color:${color}"` : ""}>${esc(view.status)}</div>
           ${view.detail.length ? `<div class="sub">${view.detail.map(esc).join(" · ")}</div>` : ""}
         </div>
-        ${this._mainBtn(view)}
+        <div class="btns">${this._powerOffBtn(view)}${this._mainBtn(view)}</div>
         ${this._bar(view.progress, view.status)}
       </div>`;
 
@@ -903,7 +924,8 @@ class DishwasherCard extends HTMLElement {
     if (starter && !view.offline && !RUNNING.includes(view.state)) {
       // a switch of the user's own (e.g. an automation that starts the dishwasher): its own name and icon
       const name = this._config.starter_name || starter.attributes?.friendly_name || starter.entity_id;
-      chips.push(this._toggleChip(starter.entity_id, name, starter.attributes?.icon || "mdi:play-circle-outline"));
+      const icon = this._config.starter_icon || starter.attributes?.icon || "mdi:play-circle-outline";
+      chips.push(this._toggleChip(starter.entity_id, name, icon));
     }
     const chipRow = chips.some(Boolean) ? `<div class="chips">${chips.join("")}</div>` : "";
 
@@ -924,6 +946,14 @@ class DishwasherCard extends HTMLElement {
     return `<ha-card><div class="dev">${head}${startHint}${setup}${chipRow}${hintBox}</div>${err}</ha-card>`;
   }
 
+  // Middle of the delayed-start stepper: a native picker (a wheel on iOS) in DELAY_STEP_MIN steps.
+  _delayPick(d) {
+    const label = (m) => (m ? this._t("delay_in", { time: this._dur(m * 60), clock: this._clock(m * 60) }) : this._t("delay_now"));
+    const options = [];
+    for (let m = 0; m <= DELAY_MAX_MIN; m += DELAY_STEP_MIN) options.push(`<option value="${m}" ${m === d ? "selected" : ""}>${esc(label(m))}</option>`);
+    return `<select class="pick" data-act="delay-pick" aria-label="${this._t("delay_label")}">${options.join("")}</select>`;
+  }
+
   // Program drop-down and delayed start, shown while the dishwasher is ready.
   _setupRow(dev) {
     const sel = this._st("selected");
@@ -937,11 +967,11 @@ class DishwasherCard extends HTMLElement {
       : "";
     const d = this._delayMin;
     const delay = dev.e.delay_set
-      ? `<div class="stepper" role="group" aria-label="${this._t("st_DelayedStart")}">
+      ? `<div class="field"><span class="field-label">${this._t("delay_label")}</span><div class="stepper" role="group" aria-label="${this._t("delay_label")}">
           <button data-act="delay" data-dir="-1" ${d <= 0 ? "disabled" : ""} aria-label="${this._t("delay_less")}"><ha-icon icon="mdi:minus"></ha-icon></button>
-          <span class="val" aria-live="polite">${d ? this._t("delay_in", { time: this._dur(d * 60), clock: this._clock(d * 60) }) : this._t("delay_now")}</span>
+          ${this._delayPick(d)}
           <button data-act="delay" data-dir="1" ${d >= DELAY_MAX_MIN ? "disabled" : ""} aria-label="${this._t("delay_more")}"><ha-icon icon="mdi:plus"></ha-icon></button>
-        </div>`
+        </div></div>`
       : "";
     return program || delay ? `<div class="setup">${program}${delay}</div>` : "";
   }
@@ -1001,6 +1031,11 @@ class DishwasherCard extends HTMLElement {
       .main ha-icon { --mdc-icon-size: 22px; }
       .main:hover { filter: brightness(1.08); }
       .main.ask { background: var(--error-color); }
+      .btns { display: flex; align-items: center; gap: 8px; }
+      /* secondary next to the main button: switch off */
+      .main.quiet { width: 36px; height: 36px; background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
+        color: var(--primary-text-color); }
+      .main.quiet ha-icon { --mdc-icon-size: 20px; }
 
       .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
       .chip { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px;
@@ -1029,13 +1064,15 @@ class DishwasherCard extends HTMLElement {
       select, .stepper { box-sizing: border-box; min-height: 38px; border-radius: var(--ha-card-border-radius, 12px);
         border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
       select { width: 100%; padding: 0 8px; cursor: pointer; text-overflow: ellipsis; }
-      .stepper { display: flex; align-items: center; justify-content: space-between; overflow: hidden; align-self: end; }
+      .stepper { display: flex; align-items: center; justify-content: space-between; overflow: hidden; }
       .stepper button { all: unset; box-sizing: border-box; width: 36px; align-self: stretch; display: flex; align-items: center;
         justify-content: center; cursor: pointer; color: var(--primary-color); }
       .stepper button:hover { background: var(--secondary-background-color); }
       .stepper button[disabled] { opacity: .35; }
       .stepper ha-icon { --mdc-icon-size: 18px; }
-      .val { font-size: 13px; text-align: center; padding: 0 4px; font-variant-numeric: tabular-nums; }
+      .stepper select.pick { appearance: none; -webkit-appearance: none; border: 0; background: transparent; min-height: 0;
+        padding: 0 2px; width: auto; flex: 1; min-width: 0; text-align: center; text-align-last: center; font-size: 13px;
+        color: var(--primary-text-color); font-variant-numeric: tabular-nums; cursor: pointer; }
       .hints { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
       .hint { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; min-height: 36px;
         padding: 0 4px 0 10px; border-radius: 10px; font-size: 14px;
