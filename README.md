@@ -51,7 +51,9 @@ type: custom:hcpy-dishwasher-card
 | `mode` | `full` | `full` or `row` (see above) |
 | `name` | device name | Name shown in the card |
 | `device_id` | found by itself | The dishwasher to show, if hcpy has more than one (the visual editor lets you pick it) |
-| `starter_entity` | – | An `input_boolean` or `switch` for "start when nobody is home", shown next to the options |
+| `starter_entity` | – | An extra `input_boolean` or `switch` shown next to the options while no program runs, e.g. for an automation of your own that starts the dishwasher later |
+| `starter_name` | entity name | Name shown for that switch |
+| `start_options` | – | Options switched on before every start and after choosing another program, if the program allows them: `extradry`, `halfload`, `variospeedplus` |
 | `hide` | – | Parts to hide: `options`, `hints`, `door` |
 | `tap_action`, `hold_action` | more-info, – | Row only: what tapping or holding the row does (standard Home Assistant actions) |
 

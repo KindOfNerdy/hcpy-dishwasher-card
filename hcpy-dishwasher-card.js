@@ -7,7 +7,7 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.1";
 const MODES = ["full", "row"];
 const PARTS = ["options", "hints", "door"];
 
@@ -24,6 +24,8 @@ const ROLES = {
   delay: ["sensor", ["startinrelative"]],
   remote_start: ["binary_sensor", ["remotecontrolstartallowed"]],
   abort: ["button", ["abortprogram"]],
+  power: ["switch", ["setting_powerstate", "powerstate"]],
+  delay_set: ["number", ["option_startinrelative", "startinrelative"]],
   ack_select: ["select", ["acknowledgeevent"]],
   ack_button: ["button", ["acknowledgeevent"]],
   favorite: ["sensor", ["favorite_001_name"]],
@@ -64,9 +66,16 @@ const HINT_COLOR = { error: "var(--error-color)", warning: "var(--warning-color)
 
 const RUNNING = ["Run", "Pause", "DelayedStart", "Aborting"];
 const ABORTABLE = ["Run", "Pause", "DelayedStart"];
+// While a program runs, the icon shows its phase.
+const PHASE_ICON = { PreRinse: "mdi:water-outline", MainWash: "mdi:dishwasher", FinalRinse: "mdi:shimmer", Drying: "mdi:heat-wave" };
+// Delayed start: steps of the minus/plus buttons and the most the dishwasher accepts (StartInRelative, 24 h).
+const DELAY_STEP_MIN = 30;
+const DELAY_MAX_MIN = 24 * 60;
 const OFF = ["unavailable", "unknown", undefined, null, ""];
 // How long a pressed button waits for the machine before it gives up showing a spinner.
 const WAIT_MS = 30000;
+// A switch answers in 2–3 s; no answer after this means the machine ignored it.
+const SWITCH_WAIT_MS = 10000;
 // How long the abort button asks "really?" before it falls back.
 const CONFIRM_MS = 4000;
 
@@ -106,6 +115,7 @@ const TEXT = {
     done_at: "done {time}",
     starts_in: "Starts in {time}",
     starts_at: "at {time}",
+    takes: "takes about {time}",
     door_open: "Door open",
     door_closed: "Door closed",
     o_extradry: "Extra dry",
@@ -115,8 +125,18 @@ const TEXT = {
     od_silence_left: "Silence · {time}",
     od_speed: "Finish faster",
     od_speed_on: "Sped up",
-    starter: "Start when nobody is home",
     abort: "Cancel program",
+    start: "Start program",
+    power_on: "Switch on",
+    close_door: "Close the door to start",
+    allow_remote: "Allow remote start on the dishwasher",
+    program: "Program",
+    delay_now: "Right away",
+    delay_in: "In {time} · at {clock}",
+    delay_less: "Start earlier",
+    delay_more: "Start later",
+    not_started: "The dishwasher did not start.",
+    ed_start_options: "Switch on before every start (if the program allows it)",
     abort_confirm: "Really cancel?",
     ack: "OK",
     ack_label: "Acknowledge: {hint}",
@@ -136,12 +156,14 @@ const TEXT = {
     h_MachineCareAndFilterCleaningReminder: "Machine care and filter cleaning due",
     h_SmartFilterCleaningReminder: "Clean the filter",
     error: "Could not do it: {msg}",
+    not_taken: "The dishwasher did not take it – maybe not possible with this program.",
     ed_mode: "Display",
     mode_full: "Full card",
     mode_row: "Row",
     ed_name: "Name",
     ed_device_id: "Dishwasher (empty = find it)",
-    ed_starter_entity: "Switch “start when nobody is home” (optional)",
+    ed_starter_entity: "Extra switch next to the options, e.g. for your own start automation (optional)",
+    ed_starter_name: "Name of that switch (empty = its entity name)",
     ed_hide: "Hide parts",
     ed_hide_options: "Options",
     ed_hide_hints: "Hints",
@@ -185,6 +207,7 @@ const TEXT = {
     done_at: "fertig {time}",
     starts_in: "Startet in {time}",
     starts_at: "um {time}",
+    takes: "dauert ca. {time}",
     door_open: "Tür offen",
     door_closed: "Tür zu",
     o_extradry: "Extra trocken",
@@ -194,8 +217,18 @@ const TEXT = {
     od_silence_left: "Leise · noch {time}",
     od_speed: "Schneller fertig",
     od_speed_on: "Beschleunigt",
-    starter: "Starten, wenn niemand da ist",
     abort: "Programm abbrechen",
+    start: "Programm starten",
+    power_on: "Einschalten",
+    close_door: "Zum Starten die Tür schließen",
+    allow_remote: "Fernstart an der Maschine freigeben",
+    program: "Programm",
+    delay_now: "Sofort",
+    delay_in: "In {time} · um {clock}",
+    delay_less: "Früher starten",
+    delay_more: "Später starten",
+    not_started: "Die Spülmaschine ist nicht gestartet.",
+    ed_start_options: "Vor jedem Start einschalten (wenn das Programm es erlaubt)",
     abort_confirm: "Wirklich abbrechen?",
     ack: "OK",
     ack_label: "Quittieren: {hint}",
@@ -215,12 +248,14 @@ const TEXT = {
     h_MachineCareAndFilterCleaningReminder: "Maschinenpflege und Filterreinigung fällig",
     h_SmartFilterCleaningReminder: "Filter reinigen",
     error: "Hat nicht geklappt: {msg}",
+    not_taken: "Hat die Maschine nicht übernommen – bei diesem Programm vielleicht nicht möglich.",
     ed_mode: "Darstellung",
     mode_full: "Volle Karte",
     mode_row: "Zeile",
     ed_name: "Name",
     ed_device_id: "Spülmaschine (leer = selbst suchen)",
-    ed_starter_entity: "Schalter „Starten, wenn niemand da ist“ (optional)",
+    ed_starter_entity: "Zusätzlicher Schalter neben den Optionen, z. B. für eine eigene Start-Automation (optional)",
+    ed_starter_name: "Name dieses Schalters (leer = Name der Entität)",
     ed_hide: "Teile ausblenden",
     ed_hide_options: "Optionen",
     ed_hide_hints: "Hinweise",
@@ -254,6 +289,7 @@ class DishwasherCard extends HTMLElement {
     this._confirm = false;
     this._error = "";
     this._uids = null; // entity_id → unique_id, once read from the registry
+    this._delayMin = 0; // delayed start chosen in the card, sent with the start
 
     this.shadowRoot.addEventListener("click", (e) => {
       const el = e.target.closest("[data-act]");
@@ -266,7 +302,12 @@ class DishwasherCard extends HTMLElement {
       if (el.disabled) return;
       const { act, entity } = el.dataset;
       if (act === "abort") this._abort();
-      if (act === "toggle") this._press(entity, entity, "homeassistant", "toggle", { entity_id: entity });
+      if (act === "start") this._start();
+      if (act === "power") this._press("power", entity, "switch", "turn_on", { entity_id: entity });
+      if (act === "delay") this._stepDelay(Number(el.dataset.dir));
+      // the machine answers a switch within seconds; options a program does not allow it ignores silently
+      if (act === "toggle")
+        this._press(entity, entity, "homeassistant", "toggle", { entity_id: entity }, { wait: SWITCH_WAIT_MS, ignored: "not_taken" });
       if (act === "ack") this._ack(el.dataset.hint);
       if (act === "more") this._moreInfo(entity);
     });
@@ -284,6 +325,17 @@ class DishwasherCard extends HTMLElement {
     for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
       this.shadowRoot.addEventListener(ev, () => clearTimeout(this._holdTimer), true);
     }
+    this.shadowRoot.addEventListener("change", (e) => {
+      if (e.target.matches?.("select[data-act='program']") && e.target.value) this._chooseProgram(e.target.value);
+    });
+    // keep the card still while the program drop-down is open
+    this.shadowRoot.addEventListener("focusin", (e) => {
+      if (e.target.matches?.("select")) this._hold = true;
+    });
+    this.shadowRoot.addEventListener("focusout", () => {
+      this._hold = false;
+      setTimeout(() => this._refresh(), 0);
+    });
     this.shadowRoot.addEventListener("keydown", (e) => {
       const tile = e.target.matches?.("[data-tap]") ? e.target : null;
       if (tile && (e.key === "Enter" || e.key === " ")) {
@@ -306,6 +358,13 @@ class DishwasherCard extends HTMLElement {
         { name: "name", selector: { text: {} } },
         { name: "device_id", selector: { device: { filter: { integration: "mqtt" } } } },
         { name: "starter_entity", selector: { entity: { domain: ["input_boolean", "switch"] } } },
+        { name: "starter_name", selector: { text: {} } },
+        {
+          name: "start_options",
+          selector: {
+            select: { multiple: true, mode: "list", options: OPTIONS.map((o) => ({ value: o, label: uiText(`o_${o}`) })) },
+          },
+        },
         {
           name: "hide",
           selector: {
@@ -471,7 +530,11 @@ class DishwasherCard extends HTMLElement {
 
   _program(state) {
     const raw = this._val(RUNNING.includes(state) || state === "Finished" ? "active" : "selected") ?? this._val("active");
-    if (raw == null) return "";
+    return raw == null ? "" : this._programName(raw);
+  }
+
+  // "Auto2" → "Auto 45–65 °C"; a number is a favorite slot, named after the favorite.
+  _programName(raw) {
     if (/^\d+$/.test(raw)) return this._val("favorite") || this._t("pr_favorite");
     return this._known("pr_", raw);
   }
@@ -496,7 +559,11 @@ class DishwasherCard extends HTMLElement {
   _view() {
     const st = this._st("state");
     const offline = !st || st.state === "unavailable";
-    const state = offline ? "offline" : this._val("state") || "offline";
+    let state = offline ? "offline" : this._val("state") || "offline";
+    // Off: the power switch decides, as the operation state can still read "Ready"
+    // while the dishwasher is off; a running program always wins.
+    const off = !offline && !RUNNING.includes(state) && (state === "Inactive" || this._val("power") === "off");
+    if (off) state = "Inactive";
     const remaining = this._num("remaining");
     const delay = this._num("delay");
     const about = this._val("estimated") === "on";
@@ -514,7 +581,10 @@ class DishwasherCard extends HTMLElement {
     } else if (state === "DelayedStart" && delay) {
       status = when = this._t("starts_in", { time: this._dur(delay) });
       detail = [program, this._t("starts_at", { time: this._clock(delay) })];
-    } else if (!offline) {
+    } else if (state === "Ready" && remaining) {
+      // when ready, the dishwasher already reports how long the preselected program takes
+      detail = [program, this._t("takes", { time: this._dur(remaining) })];
+    } else if (!offline && !off) {
       detail = [program];
     }
     // during a program the chosen options are just part of the description
@@ -525,7 +595,15 @@ class DishwasherCard extends HTMLElement {
     const doorOpen = !offline && this._shows("door") && this._val("door") === "Open";
     if (doorOpen) detail.unshift(this._t("door_open"));
     const progress = state === "Run" || state === "Pause" ? this._num("progress") : null;
-    return { state, offline, status, detail: detail.filter(Boolean), when, phase, progress, doorOpen };
+    // Starting needs a closed door and the remote start allowed; otherwise the card says what is missing.
+    let startHint = "";
+    if (state === "Ready") {
+      if (this._val("door") === "Open") startHint = "close_door";
+      else if (this._dev.e.remote_start && this._val("remote_start") !== "on") startHint = "allow_remote";
+    }
+    const canStart = state === "Ready" && !startHint && !!this._dev.e.active && !!this._val("selected");
+    const phaseRaw = state === "Run" || state === "Pause" ? this._val("phase") : null;
+    return { state, offline, off, status, detail: detail.filter(Boolean), when, phase, phaseRaw, progress, doorOpen, canStart, startHint };
   }
 
   // Chosen options for the description line. Speeding up switches VarioSpeed
@@ -551,10 +629,14 @@ class DishwasherCard extends HTMLElement {
   // ---- actions ---------------------------------------------------------------
 
   // A pressed control waits for the machine: it shows a spinner until `watch`
-  // changes, the call fails, or WAIT_MS have passed.
-  async _press(key, watch, domain, service, data) {
+  // changes, the call fails, or the wait runs out. With `ignored` set, running
+  // out means the machine silently refused it and that message is shown.
+  async _press(key, watch, domain, service, data, { wait = WAIT_MS, ignored = "" } = {}) {
     if (this._busy[key]) return;
-    const timer = setTimeout(() => this._release(key), WAIT_MS);
+    const timer = setTimeout(() => {
+      if (ignored) this._error = this._t(ignored);
+      this._release(key);
+    }, wait);
     this._busy[key] = { watch, from: this._hass.states[watch]?.state, timer };
     this._error = "";
     this._refresh();
@@ -590,6 +672,76 @@ class DishwasherCard extends HTMLElement {
     this._press("abort", this._dev.e.state, "button", "press", { entity_id: id });
   }
 
+  // Waits until `test()` holds or `ms` have passed; true when it held.
+  _waitFor(test, ms) {
+    return new Promise((resolve) => {
+      const end = Date.now() + ms;
+      const tick = () => (test() ? resolve(true) : Date.now() > end ? resolve(false) : setTimeout(tick, 250));
+      tick();
+    });
+  }
+
+  // Switches on the options wanted before every start (start_options). Options the
+  // program does not allow are ignored by the dishwasher; that is fine here.
+  async _applyStartOptions() {
+    for (const o of [].concat(this._config.start_options || [])) {
+      const id = this._dev?.e[`opt_${o}`];
+      if (!id || this._hass.states[id]?.state === "on") continue;
+      await this._hass.callService("switch", "turn_on", { entity_id: id });
+      await this._waitFor(() => this._hass.states[id]?.state === "on", 5000);
+    }
+  }
+
+  // A new program resets the options on the dishwasher, so the wanted ones are set again afterwards.
+  async _chooseProgram(raw) {
+    const e = this._dev?.e;
+    if (!e?.selected || this._busy.program) return;
+    this._busy.program = { watch: e.selected, from: this._hass.states[e.selected]?.state, timer: null };
+    this._error = "";
+    this._refresh();
+    try {
+      await this._hass.callService("select", "select_option", { entity_id: e.selected, option: raw });
+      if (await this._waitFor(() => this._val("selected") === raw, 15000)) await this._applyStartOptions();
+    } catch (err) {
+      this._error = this._t("error", { msg: err?.message || err });
+    }
+    delete this._busy.program;
+    this._refresh();
+  }
+
+  _stepDelay(dir) {
+    this._delayMin = Math.min(DELAY_MAX_MIN, Math.max(0, this._delayMin + dir * DELAY_STEP_MIN));
+    this._refresh();
+  }
+
+  // Start in the order the dishwasher needs: program (already chosen) → options →
+  // delayed start → ActiveProgram, which starts it (SelectedProgram only preselects).
+  async _start() {
+    const e = this._dev?.e;
+    const program = this._val("selected");
+    if (!e?.active || !program || this._busy.start) return;
+    const timer = setTimeout(() => {
+      this._error = this._t("not_started");
+      this._release("start");
+    }, WAIT_MS);
+    this._busy.start = { watch: e.state, from: this._hass.states[e.state]?.state, timer };
+    this._error = "";
+    this._refresh();
+    try {
+      await this._applyStartOptions();
+      if (this._delayMin && e.delay_set) {
+        await this._hass.callService("number", "set_value", { entity_id: e.delay_set, value: this._delayMin * 60 });
+        await this._waitFor(() => this._num("delay") === this._delayMin * 60, 5000);
+      }
+      await this._hass.callService("select", "select_option", { entity_id: e.active, option: program });
+      this._delayMin = 0;
+    } catch (err) {
+      this._release("start");
+      this._error = this._t("error", { msg: err?.message || err });
+      this._refresh();
+    }
+  }
+
   // Acknowledge one hint: the bridge's AcknowledgeEvent list names each event
   // ("SaltNearlyEmpty (4626)"); without it, the plain AcknowledgeEvent button.
   _ack(name) {
@@ -619,7 +771,7 @@ class DishwasherCard extends HTMLElement {
   // ---- rendering -------------------------------------------------------------
 
   _update() {
-    if (!this._config) return;
+    if (!this._config || this._hold) return;
     const hass = this._hass;
     const dev = this._discover();
     this._dev = dev;
@@ -634,6 +786,7 @@ class DishwasherCard extends HTMLElement {
       ids.map((id) => [hass.states[id]?.state, hass.states[id]?.attributes?.options]),
       Object.keys(this._busy),
       this._confirm,
+      this._delayMin,
       this._error,
       this._config,
       hass.language,
@@ -657,14 +810,25 @@ class DishwasherCard extends HTMLElement {
     return `<ha-icon icon="mdi:loading" class="spin"></ha-icon>`;
   }
 
-  // The one main button: cancel while a program runs or waits to start.
-  _abortBtn(view) {
-    if (!this._dev.e.abort || !ABORTABLE.includes(view.state)) return "";
+  // The one main button that fits now: switch on when off, start when ready,
+  // cancel while a program runs or waits to start.
+  _mainBtn(view) {
+    const e = this._dev.e;
+    if (view.off && e.power) return this._btn("power", "mdi:power", "power_on", "", e.power);
+    if (view.canStart) return this._btn("start", "mdi:play", "start", "go");
+    if (!e.abort || !ABORTABLE.includes(view.state)) return "";
     const busy = !!this._busy.abort;
     const ask = this._confirm;
     const label = this._t(ask ? "abort_confirm" : "abort");
     return `<button class="main ${ask ? "ask" : ""}" data-act="abort" ${busy ? "disabled" : ""} title="${label}" aria-label="${label}">
       ${busy ? this._spinner() : `<ha-icon icon="mdi:${ask ? "help" : "stop"}"></ha-icon>`}</button>`;
+  }
+
+  _btn(act, icon, label, cls, entity = "") {
+    const busy = !!this._busy[act];
+    const text = this._t(label);
+    return `<button class="main ${cls}" data-act="${act}" ${entity ? `data-entity="${entity}"` : ""} ${busy ? "disabled" : ""}
+      title="${text}" aria-label="${text}">${busy ? this._spinner() : `<ha-icon icon="${icon}"></ha-icon>`}</button>`;
   }
 
   _bar(progress, label) {
@@ -674,8 +838,15 @@ class DishwasherCard extends HTMLElement {
       aria-valuemax="100"><div style="width:${v}%"></div></div>`;
   }
 
+  // The theme's error color when the dishwasher needs someone; same in the full card and the row.
+  _statusColor(view) {
+    return view.state === "Error" || view.state === "ActionRequired" ? "var(--error-color)" : "";
+  }
+
   _icon(view) {
-    const icon = view.offline ? "mdi:dishwasher-off" : view.state === "Finished" ? "mdi:dishwasher-alert" : "mdi:dishwasher";
+    const icon = view.offline
+      ? "mdi:dishwasher-off"
+      : PHASE_ICON[view.phaseRaw] || (view.state === "Finished" ? "mdi:dishwasher-alert" : "mdi:dishwasher");
     const badge = view.doorOpen ? `<span class="badge" title="${this._t("door_open")}"><ha-icon icon="mdi:door-open"></ha-icon></span>` : "";
     return `<div class="dicon ${view.offline ? "off" : ""} ${RUNNING.includes(view.state) ? "on" : ""}"><ha-icon icon="${icon}"></ha-icon>${badge}</div>`;
   }
@@ -693,7 +864,7 @@ class DishwasherCard extends HTMLElement {
   }
 
   _renderFull(dev, view) {
-    const color = view.state === "Error" || view.state === "ActionRequired" ? "var(--error-color)" : "";
+    const color = this._statusColor(view);
     const head = `
       <div class="head">
         ${this._icon(view)}
@@ -702,9 +873,13 @@ class DishwasherCard extends HTMLElement {
           <div class="status" ${color ? `style="color:${color}"` : ""}>${esc(view.status)}</div>
           ${view.detail.length ? `<div class="sub">${view.detail.map(esc).join(" · ")}</div>` : ""}
         </div>
-        ${this._abortBtn(view)}
+        ${this._mainBtn(view)}
         ${this._bar(view.progress, view.status)}
       </div>`;
+
+    // ready: what to start and when, or what is missing to start it
+    const setup = view.state === "Ready" ? this._setupRow(dev) : "";
+    const startHint = view.startHint ? `<div class="start-hint"><ha-icon icon="mdi:information-outline"></ha-icon>${this._t(view.startHint)}</div>` : "";
 
     // chips only where something can be set: the options before a start (while
     // running they are part of the description line), on-demand while it runs
@@ -726,7 +901,9 @@ class DishwasherCard extends HTMLElement {
     }
     const starter = this._config.starter_entity && this._hass.states[this._config.starter_entity];
     if (starter && !view.offline && !RUNNING.includes(view.state)) {
-      chips.push(this._toggleChip(starter.entity_id, this._t("starter"), "mdi:home-export-outline"));
+      // a switch of the user's own (e.g. an automation that starts the dishwasher): its own name and icon
+      const name = this._config.starter_name || starter.attributes?.friendly_name || starter.entity_id;
+      chips.push(this._toggleChip(starter.entity_id, name, starter.attributes?.icon || "mdi:play-circle-outline"));
     }
     const chipRow = chips.some(Boolean) ? `<div class="chips">${chips.join("")}</div>` : "";
 
@@ -744,7 +921,29 @@ class DishwasherCard extends HTMLElement {
       .join("");
     const hintBox = hints ? `<div class="hints">${hints}</div>` : "";
     const err = this._error ? `<div class="msg" role="alert">${esc(this._error)}</div>` : "";
-    return `<ha-card><div class="dev">${head}${chipRow}${hintBox}</div>${err}</ha-card>`;
+    return `<ha-card><div class="dev">${head}${startHint}${setup}${chipRow}${hintBox}</div>${err}</ha-card>`;
+  }
+
+  // Program drop-down and delayed start, shown while the dishwasher is ready.
+  _setupRow(dev) {
+    const sel = this._st("selected");
+    const options = sel?.attributes?.options || [];
+    const busy = !!this._busy.program;
+    const program = options.length
+      ? `<label class="field"><span class="field-label">${this._t("program")}</span>
+          <select data-act="program" ${busy ? "disabled" : ""} aria-label="${this._t("program")}">
+            ${options.map((o) => `<option value="${esc(o)}" ${sel.state === o ? "selected" : ""}>${esc(this._programName(o))}</option>`).join("")}
+          </select></label>`
+      : "";
+    const d = this._delayMin;
+    const delay = dev.e.delay_set
+      ? `<div class="stepper" role="group" aria-label="${this._t("st_DelayedStart")}">
+          <button data-act="delay" data-dir="-1" ${d <= 0 ? "disabled" : ""} aria-label="${this._t("delay_less")}"><ha-icon icon="mdi:minus"></ha-icon></button>
+          <span class="val" aria-live="polite">${d ? this._t("delay_in", { time: this._dur(d * 60), clock: this._clock(d * 60) }) : this._t("delay_now")}</span>
+          <button data-act="delay" data-dir="1" ${d >= DELAY_MAX_MIN ? "disabled" : ""} aria-label="${this._t("delay_more")}"><ha-icon icon="mdi:plus"></ha-icon></button>
+        </div>`
+      : "";
+    return program || delay ? `<div class="setup">${program}${delay}</div>` : "";
   }
 
   // ---- row (mode: row) ------------------------------------------------------
@@ -757,8 +956,10 @@ class DishwasherCard extends HTMLElement {
       const first = view.state === "Pause" ? this._t("st_Pause") : view.phase || this._t("st_Run");
       line = [first, view.when].filter(Boolean).map(esc).join(" · ");
     } else {
-      line = esc(view.status);
+      const color = this._statusColor(view);
+      line = color ? `<span style="color:${color}">${esc(view.status)}</span>` : esc(view.status);
     }
+    if (view.startHint) line += ` · ${esc(this._t(view.startHint))}`;
     if (hint) line += ` · <span style="color:${HINT_COLOR[hint.level]}">${esc(this._t(`h_${hint.name}`))}</span>`;
     const err = this._error ? `<div class="msg" role="alert">${esc(this._error)}</div>` : "";
     return `
@@ -769,7 +970,7 @@ class DishwasherCard extends HTMLElement {
           <div class="sub t-line">${line}</div>
           ${this._bar(view.progress, view.status)}
         </div>
-        ${this._abortBtn(view)}
+        ${this._mainBtn(view)}
       </div></ha-card>${err}`;
   }
 
@@ -820,6 +1021,21 @@ class DishwasherCard extends HTMLElement {
       .t-in .badge { width: 16px; height: 16px; top: -4px; right: -4px; box-shadow: 0 0 0 2px var(--card-background-color); }
       .t-in .badge ha-icon { --mdc-icon-size: 11px; }
 
+      .start-hint { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; color: var(--secondary-text-color); }
+      .start-hint ha-icon { --mdc-icon-size: 18px; }
+      .setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 10px; }
+      .field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .field-label { font-size: 12px; color: var(--secondary-text-color); padding-left: 2px; }
+      select, .stepper { box-sizing: border-box; min-height: 38px; border-radius: var(--ha-card-border-radius, 12px);
+        border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
+      select { width: 100%; padding: 0 8px; cursor: pointer; text-overflow: ellipsis; }
+      .stepper { display: flex; align-items: center; justify-content: space-between; overflow: hidden; align-self: end; }
+      .stepper button { all: unset; box-sizing: border-box; width: 36px; align-self: stretch; display: flex; align-items: center;
+        justify-content: center; cursor: pointer; color: var(--primary-color); }
+      .stepper button:hover { background: var(--secondary-background-color); }
+      .stepper button[disabled] { opacity: .35; }
+      .stepper ha-icon { --mdc-icon-size: 18px; }
+      .val { font-size: 13px; text-align: center; padding: 0 4px; font-variant-numeric: tabular-nums; }
       .hints { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
       .hint { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; min-height: 36px;
         padding: 0 4px 0 10px; border-radius: 10px; font-size: 14px;
@@ -855,13 +1071,21 @@ class DishwasherCard extends HTMLElement {
         column-gap: 10px; align-items: center; }
       ha-card.tile:hover { background: color-mix(in srgb, var(--primary-text-color) 4%, var(--card-background-color)); }
       ha-card.tile:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-      .t-in .dicon { width: 40px; height: 40px; --mdc-icon-size: 22px; color: var(--accent-color, var(--primary-color));
-        background: color-mix(in srgb, var(--accent-color, var(--primary-color)) 18%, transparent); }
-      .t-in .dicon.off { color: var(--secondary-text-color); background: var(--secondary-background-color); }
+      /* like the tiles around it: the icon stands free (accent only while a program runs, grey at rest
+         like a tile that is off), the button is a rounded square */
+      .t-in .dicon { width: 40px; height: 40px; --mdc-icon-size: 24px; background: none;
+        color: var(--state-inactive-color, var(--secondary-text-color)); }
+      .t-in .dicon.on { color: var(--accent-color, var(--primary-color)); background: none; }
+      .t-in .dicon.off { opacity: .5; }
       .r-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .t-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+      .tile .r-name { line-height: 20px; }
+      .t-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; }
       .tile .bar { margin-top: 4px; height: 3px; border-radius: 2px; }
-      .tile .main { width: 36px; height: 36px; }
+      .tile .main { width: 48px; height: 36px; border-radius: 12px; color: var(--primary-text-color);
+        background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
+      .tile .main.go { color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 20%, transparent); }
+      .tile .main.ask { color: var(--error-color); background: color-mix(in srgb, var(--error-color) 20%, transparent); }
+      .tile .main:focus-visible { outline-offset: 2px; }
       .tile .main ha-icon { --mdc-icon-size: 20px; }
     `;
   }
