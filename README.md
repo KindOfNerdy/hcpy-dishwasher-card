@@ -68,6 +68,29 @@ tap_action:
   navigation_path: "#dishwasher"
 ```
 
+## Start when nobody is home
+
+The card shows what is set on the dishwasher – program, options and delayed start. With a toggle helper and the blueprint below, the dishwasher starts with exactly these settings as soon as everyone has left. Switching the helper off before then cancels the start.
+
+1. Create a toggle helper, for example "Start dishwasher when nobody is home":
+
+   [![Open your Home Assistant instance and show your helper entities.](https://my.home-assistant.io/badges/helpers.svg)](https://my.home-assistant.io/redirect/helpers/)
+
+2. Import the blueprint:
+
+   [![Open your Home Assistant instance and show the blueprint import dialog with this blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FKindOfNerdy%2Fhcpy-dishwasher-card%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fhcpy_dishwasher_start_when_away.yaml)
+
+3. Create an automation from it: pick the helper, who counts as being home (a person, a group, the home zone …) and the dishwasher entities from hcpy. Optionally add notifications; the text for each step is in `message`.
+4. Show the helper in the card:
+
+   ```yaml
+   type: custom:hcpy-dishwasher-card
+   starter_entity: input_boolean.start_dishwasher_when_nobody_is_home
+   starter_name: Start when nobody is home
+   ```
+
+The dishwasher needs remote start allowed and a closed door. If something is missing when it is time to start, the automation says why instead of failing silently.
+
 ## Thanks
 
 All of this only works because [hcpy](https://github.com/hcpy2-0/hcpy) talks to the dishwasher locally.

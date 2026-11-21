@@ -7,7 +7,7 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.2";
+const CARD_VERSION = "0.1.3";
 const MODES = ["full", "row"];
 const PARTS = ["options", "hints", "door"];
 
@@ -295,7 +295,7 @@ class DishwasherCard extends HTMLElement {
     this._confirm = false;
     this._error = "";
     this._uids = null; // entity_id → unique_id, once read from the registry
-    this._delayMin = 0; // delayed start chosen in the card, sent with the start
+    this._delayPending = null; // delayed start (minutes) just picked, until the dishwasher reports it
 
     this.shadowRoot.addEventListener("click", (e) => {
       const el = e.target.closest("[data-act]");
@@ -336,8 +336,7 @@ class DishwasherCard extends HTMLElement {
     this.shadowRoot.addEventListener("change", (e) => {
       if (e.target.matches?.("select[data-act='program']") && e.target.value) this._chooseProgram(e.target.value);
       if (e.target.matches?.("select[data-act='delay-pick']")) {
-        this._delayMin = Number(e.target.value) || 0;
-        this._refresh();
+        this._setDelay(Number(e.target.value) || 0);
       }
     });
     // keep the card still while the program drop-down is open
@@ -432,6 +431,7 @@ class DishwasherCard extends HTMLElement {
 
   disconnectedCallback() {
     clearTimeout(this._confirmTimer);
+    clearTimeout(this._delayTimer);
   }
 
   _refresh() {
@@ -606,7 +606,8 @@ class DishwasherCard extends HTMLElement {
       const at = program ? detail.indexOf(program) + 1 : detail.length;
       detail.splice(at, 0, ...this._activeOptions());
     }
-    const doorOpen = !offline && this._shows("door") && this._val("door") === "Open";
+    // the door only matters while the dishwasher is on
+    const doorOpen = !offline && !off && this._shows("door") && this._val("door") === "Open";
     if (doorOpen) detail.unshift(this._t("door_open"));
     const progress = state === "Run" || state === "Pause" ? this._num("progress") : null;
     // Starting needs a closed door and the remote start allowed; otherwise the card says what is missing.
@@ -716,6 +717,7 @@ class DishwasherCard extends HTMLElement {
     try {
       await this._hass.callService("select", "select_option", { entity_id: e.selected, option: raw });
       if (await this._waitFor(() => this._val("selected") === raw, 15000)) await this._applyStartOptions();
+      else this._error = this._t("not_taken");
     } catch (err) {
       this._error = this._t("error", { msg: err?.message || err });
     }
@@ -723,8 +725,38 @@ class DishwasherCard extends HTMLElement {
     this._refresh();
   }
 
+  // The delayed start lives on the dishwasher (StartInRelative), so a start from an
+  // automation or another device uses it too. Shown: the value just picked, else the machine's.
+  _delayValue() {
+    if (this._delayPending != null) return this._delayPending;
+    return Math.round((this._num("delay_set") ?? 0) / 60);
+  }
+
   _stepDelay(dir) {
-    this._delayMin = Math.min(DELAY_MAX_MIN, Math.max(0, this._delayMin + dir * DELAY_STEP_MIN));
+    this._setDelay(Math.min(DELAY_MAX_MIN, Math.max(0, this._delayValue() + dir * DELAY_STEP_MIN)));
+  }
+
+  // Several quick taps become one write; a value the dishwasher does not take is reported.
+  _setDelay(min) {
+    const id = this._dev?.e.delay_set;
+    if (!id) return;
+    this._delayPending = min;
+    this._refresh();
+    clearTimeout(this._delayTimer);
+    this._delayTimer = setTimeout(() => this._writeDelay(), 800);
+  }
+
+  async _writeDelay() {
+    const id = this._dev?.e.delay_set;
+    const min = this._delayPending;
+    if (!id || min == null) return;
+    try {
+      await this._hass.callService("number", "set_value", { entity_id: id, value: min * 60 });
+      if (!(await this._waitFor(() => this._num("delay_set") === min * 60, 5000))) this._error = this._t("not_taken");
+    } catch (err) {
+      this._error = this._t("error", { msg: err?.message || err });
+    }
+    if (this._delayPending === min) this._delayPending = null;
     this._refresh();
   }
 
@@ -743,12 +775,12 @@ class DishwasherCard extends HTMLElement {
     this._refresh();
     try {
       await this._applyStartOptions();
-      if (this._delayMin && e.delay_set) {
-        await this._hass.callService("number", "set_value", { entity_id: e.delay_set, value: this._delayMin * 60 });
-        await this._waitFor(() => this._num("delay") === this._delayMin * 60, 5000);
+      // a delayed start picked a moment ago may still be on its way
+      if (this._delayPending != null) {
+        clearTimeout(this._delayTimer);
+        await this._writeDelay();
       }
       await this._hass.callService("select", "select_option", { entity_id: e.active, option: program });
-      this._delayMin = 0;
     } catch (err) {
       this._release("start");
       this._error = this._t("error", { msg: err?.message || err });
@@ -800,7 +832,7 @@ class DishwasherCard extends HTMLElement {
       ids.map((id) => [hass.states[id]?.state, hass.states[id]?.attributes?.options]),
       Object.keys(this._busy),
       this._confirm,
-      this._delayMin,
+      this._delayPending,
       this._error,
       this._config,
       hass.language,
@@ -899,7 +931,8 @@ class DishwasherCard extends HTMLElement {
       </div>`;
 
     // ready: what to start and when, or what is missing to start it
-    const setup = view.state === "Ready" ? this._setupRow(dev) : "";
+    // program and delayed start can be chosen while ready and while off (the start then switches it on)
+    const setup = view.state === "Ready" || view.off ? this._setupRow(dev) : "";
     const startHint = view.startHint ? `<div class="start-hint"><ha-icon icon="mdi:information-outline"></ha-icon>${this._t(view.startHint)}</div>` : "";
 
     // chips only where something can be set: the options before a start (while
@@ -965,7 +998,7 @@ class DishwasherCard extends HTMLElement {
             ${options.map((o) => `<option value="${esc(o)}" ${sel.state === o ? "selected" : ""}>${esc(this._programName(o))}</option>`).join("")}
           </select></label>`
       : "";
-    const d = this._delayMin;
+    const d = this._delayValue();
     const delay = dev.e.delay_set
       ? `<div class="field"><span class="field-label">${this._t("delay_label")}</span><div class="stepper" role="group" aria-label="${this._t("delay_label")}">
           <button data-act="delay" data-dir="-1" ${d <= 0 ? "disabled" : ""} aria-label="${this._t("delay_less")}"><ha-icon icon="mdi:minus"></ha-icon></button>

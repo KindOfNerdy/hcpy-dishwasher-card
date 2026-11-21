@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+- Program and delayed start can also be chosen while the dishwasher is off; a note if it does not take the program
+- The open door is only shown while the dishwasher is on
+- The delayed start is set on the dishwasher right away, so a start from an automation or another device uses it too
+- Blueprint: start the dishwasher when nobody is home, with the settings on the dishwasher
+
 ## 0.1.2
 - Switch-off button next to the start button while no program runs
 - Delayed start: minus and plus with a picker in the middle

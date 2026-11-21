@@ -1,0 +1,191 @@
+blueprint:
+  name: Dishwasher – start when nobody is home (hcpy)
+  description: >-
+    Starts a Bosch or Siemens dishwasher connected through hcpy (HomeConnect2MQTT)
+    as soon as nobody is home – with whatever is set on the dishwasher: program,
+    options and delayed start (for example chosen in the hcpy Dishwasher Card).
+
+
+    Arm it by switching a toggle helper on. Switching the helper off before
+    everyone has left cancels the start. Show the helper in the card with
+    `starter_entity`.
+  domain: automation
+  author: KindOfNerdy
+  homeassistant:
+    min_version: "2024.10.0"
+  source_url: https://github.com/KindOfNerdy/hcpy-dishwasher-card/blob/main/blueprints/automation/hcpy_dishwasher_start_when_away.yaml
+  input:
+    starter:
+      name: Helper that arms the start
+      description: A toggle helper (input_boolean). Switching it on arms the start; it is switched off again when the dishwasher starts.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    presence:
+      name: Somebody is home
+      description: >-
+        Nobody is home when this entity is off, not_home or 0 – for example a
+        person, a group of persons, the home zone or a presence helper.
+      selector:
+        entity:
+          filter:
+            - domain: [person, group, zone, binary_sensor, input_boolean]
+    dishwasher:
+      name: Dishwasher
+      description: The entities hcpy creates for the dishwasher.
+      input:
+        operation_state:
+          name: Operation state
+          description: Sensor with Ready, Run, DelayedStart … (OperationState)
+          selector:
+            entity:
+              filter:
+                - domain: sensor
+        door:
+          name: Door
+          description: Sensor with Open / Closed (DoorState)
+          selector:
+            entity:
+              filter:
+                - domain: sensor
+        remote_start:
+          name: Remote start allowed
+          description: Binary sensor RemoteControlStartAllowed
+          selector:
+            entity:
+              filter:
+                - domain: binary_sensor
+        selected_program:
+          name: Selected program
+          description: Select SelectedProgram (preselects the program)
+          selector:
+            entity:
+              filter:
+                - domain: select
+        active_program:
+          name: Active program
+          description: Select ActiveProgram (setting it starts the program)
+          selector:
+            entity:
+              filter:
+                - domain: select
+        power:
+          name: Power
+          description: Switch PowerState
+          selector:
+            entity:
+              filter:
+                - domain: switch
+    notifications:
+      name: Notifications (optional)
+      description: >-
+        Actions to run at each step, for example a notification. The text for
+        the step is in the variable `message`.
+      collapsed: true
+      input:
+        armed_action:
+          name: When armed
+          description: For example a reminder to add a tab and close the door.
+          default: []
+          selector:
+            action: {}
+        started_action:
+          name: When started
+          default: []
+          selector:
+            action: {}
+        problem_action:
+          name: When it could not start
+          default: []
+          selector:
+            action: {}
+
+mode: parallel
+max: 5
+
+variables:
+  starter: !input starter
+  presence: !input presence
+  operation_state: !input operation_state
+  door: !input door
+  remote_start: !input remote_start
+  selected_program: !input selected_program
+  power: !input power
+
+triggers:
+  - trigger: state
+    entity_id: !input starter
+    from: "off"
+    to: "on"
+
+actions:
+  - variables:
+      message: "The dishwasher starts as soon as nobody is home. Add a tab and close the door."
+  - choose: []
+    default: !input armed_action
+
+  # Wait until nobody is home – or until the helper is switched off again (no start).
+  - wait_template: "{{ is_state(starter, 'off') or states(presence) in ['off', 'not_home', '0'] }}"
+  - if:
+      - condition: template
+        value_template: "{{ is_state(starter, 'off') }}"
+    then:
+      - stop: Start cancelled (helper switched off)
+
+  - action: input_boolean.turn_off
+    target:
+      entity_id: !input starter
+  - if:
+      - condition: template
+        value_template: "{{ is_state(power, 'off') }}"
+    then:
+      - action: switch.turn_on
+        target:
+          entity_id: !input power
+  - wait_template: "{{ is_state(operation_state, 'Ready') }}"
+    timeout:
+      seconds: 60
+
+  # Check what a start needs, so a failed start gets a reason instead of silence.
+  - variables:
+      program: "{{ states(selected_program) }}"
+      message: >-
+        {% if not is_state(operation_state, 'Ready') %}The dishwasher is not ready ({{ states(operation_state) }}).
+        {%- elif not is_state(door, 'Closed') %}The dishwasher door is not closed.
+        {%- elif not is_state(remote_start, 'on') %}Remote start is not allowed on the dishwasher.
+        {%- elif program in ['unknown', 'unavailable', ''] %}No program is selected on the dishwasher.
+        {%- endif %}
+  - if:
+      - condition: template
+        value_template: "{{ message | length > 0 }}"
+    then:
+      - choose: []
+        default: !input problem_action
+      - stop: Start conditions not met
+
+  # ActiveProgram starts the program (SelectedProgram only preselects it); options and the
+  # delayed start set on the dishwasher are kept.
+  - action: select.select_option
+    target:
+      entity_id: !input active_program
+    data:
+      option: "{{ program }}"
+  - wait_template: "{{ states(operation_state) in ['Run', 'DelayedStart'] }}"
+    timeout:
+      seconds: 60
+  - if:
+      - condition: template
+        value_template: "{{ wait.completed }}"
+    then:
+      - variables:
+          message: >-
+            {% if is_state(operation_state, 'DelayedStart') %}The dishwasher is set and starts later.
+            {%- else %}The dishwasher has started.{% endif %}
+      - choose: []
+        default: !input started_action
+    else:
+      - variables:
+          message: "The dishwasher did not take the start ({{ states(operation_state) }})."
+      - choose: []
+        default: !input problem_action
