@@ -7,9 +7,9 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.3";
+const CARD_VERSION = "0.1.4";
 const MODES = ["full", "row"];
-const PARTS = ["options", "hints", "door"];
+const PARTS = ["options", "program", "hints", "door", "care", "settings", "controls"];
 
 // Role → [domain, unique_id/entity_id endings, first match wins].
 const ROLES = {
@@ -29,6 +29,12 @@ const ROLES = {
   ack_select: ["select", ["acknowledgeevent"]],
   ack_button: ["button", ["acknowledgeevent"]],
   favorite: ["sensor", ["favorite_001_name"]],
+  started_count: ["sensor", ["all_count_started", "count_started"]],
+  set_rinseaid: ["select", ["setting_rinseaid", "rinseaid"]],
+  set_waterhardness: ["select", ["setting_waterhardness", "waterhardness"]],
+  set_turbidity: ["select", ["setting_sensitivityturbidity", "sensitivityturbidity"]],
+  set_hotwater: ["select", ["setting_hotwater", "hotwater"]],
+  set_ecoasdefault: ["select", ["setting_ecoasdefault", "ecoasdefault"]],
   opt_extradry: ["switch", ["option_extradry", "extradry"]],
   opt_halfload: ["switch", ["option_halfload", "halfload"]],
   opt_variospeedplus: ["switch", ["option_variospeedplus", "variospeedplus"]],
@@ -45,6 +51,16 @@ const OPTIONS = ["extradry", "halfload", "variospeedplus"];
 const ON_DEMAND = { silence: "od_silence", speed: "od_speed" };
 
 // Appliance events worth a hint (sensor state `Present`), most urgent first.
+// Care at a glance: per item the event that means empty/due and the one that means nearly empty.
+const CARE = [
+  ["salt", "SaltLack", "SaltNearlyEmpty"],
+  ["rinse_aid", "RinseAidLack", "RinseAidNearlyEmpty"],
+  ["machine_care", "MachineCareAndFilterCleaningReminder", "MachineCareReminder"],
+  ["filter", "CheckFilterSystem", "SmartFilterCleaningReminder"],
+];
+// Settings of the dishwasher that are shown in the settings fold, in this order.
+const SETTINGS = ["set_rinseaid", "set_waterhardness", "set_turbidity", "set_hotwater", "set_ecoasdefault"];
+
 const HINTS = [
   ["AquaStopOccured", "error", "mdi:water-alert"],
   ["DrainPumpBlocked", "error", "mdi:pump-off"],
@@ -171,6 +187,40 @@ const TEXT = {
     ed_hide_options: "Options",
     ed_hide_hints: "Hints",
     ed_hide_door: "Door",
+    ed_hide_care: "Care",
+    ed_hide_settings: "Settings",
+    ed_hide_program: "Program and delayed start",
+    ed_hide_controls: "All buttons (display only)",
+    ed_preselect_entity: "Text helper for the preselection when switched on (optional, see README)",
+    care: "Care",
+    c_salt: "Salt",
+    c_rinse_aid: "Rinse aid",
+    c_machine_care: "Machine care",
+    c_filter: "Filter",
+    cs_ok: "OK",
+    cs_low: "Nearly empty",
+    cs_empty: "Empty",
+    cs_due: "Due",
+    cs_soon: "Due soon",
+    started_count: "Programs started",
+    care_program: "Preselect machine care",
+    settings: "Settings",
+    set_rinseaid: "Rinse aid dosage",
+    set_waterhardness: "Water hardness",
+    set_turbidity: "Turbidity sensor",
+    set_hotwater: "Water connection",
+    set_ecoasdefault: "Program when switched on",
+    v_Off: "Off",
+    v_level: "Level {n}",
+    v_Standard: "Standard",
+    v_Sensitive: "Sensitive",
+    v_VerySensitive: "Very sensitive",
+    v_ColdWater: "Cold water",
+    v_HotWater: "Hot water",
+    v_LastProgram: "Last program",
+    v_EcoAsDefault: "Eco",
+    preselect: "Preselection when switched on",
+    preselect_hint: "Set when the dishwasher is switched on (by the preselection automation).",
     ed_more: "More options",
     ed_tap_action: "Tap action (row)",
     ed_hold_action: "Hold action (row)",
@@ -266,6 +316,40 @@ const TEXT = {
     ed_hide_options: "Optionen",
     ed_hide_hints: "Hinweise",
     ed_hide_door: "Tür",
+    ed_hide_care: "Pflege",
+    ed_hide_settings: "Einstellungen",
+    ed_hide_program: "Programm und Startvorwahl",
+    ed_hide_controls: "Alle Knöpfe (nur Anzeige)",
+    ed_preselect_entity: "Text-Helfer für die Vorwahl beim Einschalten (optional, siehe README)",
+    care: "Pflege",
+    c_salt: "Salz",
+    c_rinse_aid: "Klarspüler",
+    c_machine_care: "Maschinenpflege",
+    c_filter: "Filter",
+    cs_ok: "In Ordnung",
+    cs_low: "Fast leer",
+    cs_empty: "Leer",
+    cs_due: "Fällig",
+    cs_soon: "Bald fällig",
+    started_count: "Gestartete Programme",
+    care_program: "Maschinenpflege vorwählen",
+    settings: "Einstellungen",
+    set_rinseaid: "Klarspüler-Dosierung",
+    set_waterhardness: "Wasserhärte",
+    set_turbidity: "Trübungssensor",
+    set_hotwater: "Wasseranschluss",
+    set_ecoasdefault: "Programm beim Einschalten",
+    v_Off: "Aus",
+    v_level: "Stufe {n}",
+    v_Standard: "Standard",
+    v_Sensitive: "Empfindlich",
+    v_VerySensitive: "Sehr empfindlich",
+    v_ColdWater: "Kaltwasser",
+    v_HotWater: "Warmwasser",
+    v_LastProgram: "Zuletzt genutztes",
+    v_EcoAsDefault: "Eco",
+    preselect: "Vorwahl beim Einschalten",
+    preselect_hint: "Wird beim Einschalten gesetzt (über die Vorwahl-Automation).",
     ed_more: "Weitere Einstellungen",
     ed_tap_action: "Aktion beim Antippen (Zeile)",
     ed_hold_action: "Aktion beim Halten (Zeile)",
@@ -296,6 +380,7 @@ class DishwasherCard extends HTMLElement {
     this._error = "";
     this._uids = null; // entity_id → unique_id, once read from the registry
     this._delayPending = null; // delayed start (minutes) just picked, until the dishwasher reports it
+    this._open = {}; // which folds (care, settings) are open
 
     this.shadowRoot.addEventListener("click", (e) => {
       const el = e.target.closest("[data-act]");
@@ -313,6 +398,12 @@ class DishwasherCard extends HTMLElement {
       if (act === "power-off")
         this._press("power-off", entity, "switch", "turn_off", { entity_id: entity }, { wait: SWITCH_WAIT_MS, ignored: "not_taken" });
       if (act === "delay") this._stepDelay(Number(el.dataset.dir));
+      if (act === "fold") {
+        this._open[el.dataset.fold] = !this._open[el.dataset.fold];
+        this._refresh();
+      }
+      if (act === "care-program") this._chooseProgram("MachineCare");
+      if (act === "pre-opt") this._togglePreselectOption(el.dataset.opt);
       // the machine answers a switch within seconds; options a program does not allow it ignores silently
       if (act === "toggle")
         this._press(entity, entity, "homeassistant", "toggle", { entity_id: entity }, { wait: SWITCH_WAIT_MS, ignored: "not_taken" });
@@ -335,6 +426,11 @@ class DishwasherCard extends HTMLElement {
     }
     this.shadowRoot.addEventListener("change", (e) => {
       if (e.target.matches?.("select[data-act='program']") && e.target.value) this._chooseProgram(e.target.value);
+      if (e.target.matches?.("select[data-act='setting']") && e.target.value) {
+        const id = e.target.dataset.entity;
+        this._press(id, id, "select", "select_option", { entity_id: id, option: e.target.value }, { wait: SWITCH_WAIT_MS, ignored: "not_taken" });
+      }
+      if (e.target.matches?.("select[data-act='pre-program']") && e.target.value) this._writePreselect({ program: e.target.value });
       if (e.target.matches?.("select[data-act='delay-pick']")) {
         this._setDelay(Number(e.target.value) || 0);
       }
@@ -371,6 +467,7 @@ class DishwasherCard extends HTMLElement {
         { name: "starter_entity", selector: { entity: { domain: ["input_boolean", "switch"] } } },
         { name: "starter_name", selector: { text: {} } },
         { name: "starter_icon", selector: { icon: {} } },
+        { name: "preselect_entity", selector: { entity: { domain: "input_text" } } },
         {
           name: "start_options",
           selector: {
@@ -827,12 +924,13 @@ class DishwasherCard extends HTMLElement {
         delete this._busy[key];
       }
     }
-    const ids = dev ? [...Object.values(dev.e), this._config.starter_entity].filter(Boolean) : [];
+    const ids = dev ? [...Object.values(dev.e), this._config.starter_entity, this._config.preselect_entity].filter(Boolean) : [];
     const sig = JSON.stringify([
       ids.map((id) => [hass.states[id]?.state, hass.states[id]?.attributes?.options]),
       Object.keys(this._busy),
       this._confirm,
       this._delayPending,
+      this._open,
       this._error,
       this._config,
       hass.language,
@@ -858,8 +956,14 @@ class DishwasherCard extends HTMLElement {
 
   // The one main button that fits now: switch on when off, start when ready,
   // cancel while a program runs or waits to start.
+  // hide: controls → a display only: no buttons, drop-downs or chips; the states stay.
+  get _controls() {
+    return this._shows("controls");
+  }
+
   _mainBtn(view) {
     const e = this._dev.e;
+    if (!this._controls) return "";
     if (view.off && e.power) return this._btn("power", "mdi:power", "power_on", "", e.power);
     if (view.canStart) return this._btn("start", "mdi:play", "start", "go");
     if (!e.abort || !ABORTABLE.includes(view.state)) return "";
@@ -873,7 +977,7 @@ class DishwasherCard extends HTMLElement {
   // Full card only (the row keeps one button): switch off while on and no program runs.
   _powerOffBtn(view) {
     const e = this._dev.e;
-    if (!e.power || view.offline || view.off || RUNNING.includes(view.state)) return "";
+    if (!this._controls || !e.power || view.offline || view.off || RUNNING.includes(view.state)) return "";
     return this._btn("power-off", "mdi:power", "power_off", "quiet", e.power);
   }
 
@@ -932,13 +1036,13 @@ class DishwasherCard extends HTMLElement {
 
     // ready: what to start and when, or what is missing to start it
     // program and delayed start can be chosen while ready and while off (the start then switches it on)
-    const setup = view.state === "Ready" || view.off ? this._setupRow(dev) : "";
-    const startHint = view.startHint ? `<div class="start-hint"><ha-icon icon="mdi:information-outline"></ha-icon>${this._t(view.startHint)}</div>` : "";
+    const setup = this._controls && this._shows("program") && (view.state === "Ready" || view.off) ? this._setupRow(dev) : "";
+    const startHint = view.startHint && this._controls ? `<div class="start-hint"><ha-icon icon="mdi:information-outline"></ha-icon>${this._t(view.startHint)}</div>` : "";
 
     // chips only where something can be set: the options before a start (while
     // running they are part of the description line), on-demand while it runs
     const chips = [];
-    if (this._shows("options") && view.state === "Ready") {
+    if (this._shows("options") && (view.state === "Ready" || view.off)) {
       for (const o of OPTIONS) chips.push(this._toggleChip(dev.e[`opt_${o}`], this._t(`o_${o}`)));
     }
     if (this._shows("options") && view.state === "Run") {
@@ -960,13 +1064,15 @@ class DishwasherCard extends HTMLElement {
       const icon = this._config.starter_icon || starter.attributes?.icon || "mdi:play-circle-outline";
       chips.push(this._toggleChip(starter.entity_id, name, icon));
     }
-    const chipRow = chips.some(Boolean) ? `<div class="chips">${chips.join("")}</div>` : "";
+    // display only: just the notes ("Sped up"), no switches
+    const shown = this._controls ? chips : chips.filter((c) => c.startsWith('<span class="tag"'));
+    const chipRow = shown.some(Boolean) ? `<div class="chips">${shown.join("")}</div>` : "";
 
     const hints = this._hints()
       .map((h) => {
         const busy = !!this._busy[`ack:${h.name}`];
         const text = this._t(`h_${h.name}`);
-        const ack = this._canAck(h.name)
+        const ack = this._controls && this._canAck(h.name)
           ? `<button class="ack" data-act="ack" data-hint="${h.name}" ${busy ? "disabled" : ""} aria-label="${esc(this._t("ack_label", { hint: text }))}">
               ${busy ? this._spinner() : this._t("ack")}</button>`
           : "";
@@ -976,7 +1082,133 @@ class DishwasherCard extends HTMLElement {
       .join("");
     const hintBox = hints ? `<div class="hints">${hints}</div>` : "";
     const err = this._error ? `<div class="msg" role="alert">${esc(this._error)}</div>` : "";
-    return `<ha-card><div class="dev">${head}${startHint}${setup}${chipRow}${hintBox}</div>${err}</ha-card>`;
+    const folds = view.offline ? "" : this._careFold(view) + this._settingsFold(view);
+    return `<ha-card><div class="dev">${head}${startHint}${setup}${chipRow}${hintBox}${folds}</div>${err}</ha-card>`;
+  }
+
+  // A fold: closed by default, a clickable title row.
+  _fold(key, title, inner) {
+    if (!inner) return "";
+    const open = !!this._open[key];
+    return `<div class="fold">
+      <button class="fold-toggle" data-act="fold" data-fold="${key}" aria-expanded="${open}">
+        <span>${title}</span><ha-icon icon="mdi:chevron-${open ? "up" : "down"}"></ha-icon></button>
+      ${open ? `<div class="fold-body">${inner}</div>` : ""}</div>`;
+  }
+
+  // Care: salt, rinse aid, machine care and filter from the dishwasher's own events, plus a counter.
+  _careFold(view) {
+    if (!this._shows("care")) return "";
+    const rows = [];
+    for (const [key, empty, low] of CARE) {
+      if (!this._dev.e[`h_${empty}`] && !this._dev.e[`h_${low}`]) continue;
+      const due = key === "machine_care" || key === "filter";
+      let state = "cs_ok";
+      let color = "var(--success-color)";
+      if (this._hintState(empty) === "Present") {
+        state = due ? "cs_due" : "cs_empty";
+        color = "var(--error-color)";
+      } else if (this._hintState(low) === "Present") {
+        state = due ? "cs_soon" : "cs_low";
+        color = "var(--warning-color)";
+      }
+      rows.push(`<div class="kv"><span>${this._t(`c_${key}`)}</span><span class="cs" style="--cs:${color}">${this._t(state)}</span></div>`);
+    }
+    const count = this._num("started_count");
+    if (count != null) {
+      rows.push(`<div class="kv"><span>${this._t("started_count")}</span><span>${new Intl.NumberFormat(this._hass.language).format(count)}</span></div>`);
+    }
+    const careDue = ["MachineCareReminder", "MachineCareAndFilterCleaningReminder"].some((h) => this._hintState(h) === "Present");
+    const program = this._st("selected")?.attributes?.options || [];
+    const action =
+      this._controls && careDue && program.includes("MachineCare") && (view.state === "Ready" || view.off) && this._val("selected") !== "MachineCare"
+        ? `<button class="chip" data-act="care-program"><ha-icon icon="mdi:spray-bottle"></ha-icon>${this._t("care_program")}</button>`
+        : "";
+    return this._fold("care", this._t("care"), rows.length || action ? `<div class="kvs">${rows.join("")}</div>${action}` : "");
+  }
+
+  // "R03" → "Level 3", "H04" → "Level 4"; known words from the table; others made readable.
+  _settingLabel(raw) {
+    const level = /^[RH]0*(\d+)$/.exec(raw);
+    if (level) return this._t("v_level", { n: level[1] });
+    return this._known("v_", raw);
+  }
+
+  // Settings of the dishwasher as drop-downs, and the preselection when switched on.
+  _settingsFold(view) {
+    // everything in it is a control
+    if (!this._shows("settings") || !this._controls) return "";
+    const busy = RUNNING.includes(view.state);
+    const rows = SETTINGS.map((role) => {
+      const st = this._st(role);
+      const options = st?.attributes?.options;
+      if (!st || OFF.includes(st.state) || !options?.length) return "";
+      const id = st.entity_id;
+      const wait = !!this._busy[id];
+      return `<label class="setting"><span>${this._t(role)}</span>
+        <select data-act="setting" data-entity="${id}" ${busy || wait ? "disabled" : ""} aria-label="${this._t(role)}">
+          ${options.map((o) => `<option value="${esc(o)}" ${st.state === o ? "selected" : ""}>${esc(this._settingLabel(o))}</option>`).join("")}
+        </select></label>`;
+    }).join("");
+    return this._fold("settings", this._t("settings"), rows + this._preselectBlock());
+  }
+
+  // ---- preselection when switched on --------------------------------------
+  // Stored as a short JSON text in a text helper (preselect_entity), so the
+  // "preselect when switched on" blueprint can use it while no card is open:
+  // {"program":"Auto2","on":["extradry"],"off":["halfload","variospeedplus"]}
+
+  _preselect() {
+    const st = this._config.preselect_entity && this._hass.states[this._config.preselect_entity];
+    if (!st) return null;
+    let cfg = {};
+    try {
+      cfg = JSON.parse(st.state) || {};
+    } catch (_) {
+      /* empty or not ours yet: start from nothing */
+    }
+    return { program: cfg.program || "", on: [].concat(cfg.on || []), off: [].concat(cfg.off || []) };
+  }
+
+  async _writePreselect(change) {
+    const id = this._config.preselect_entity;
+    const cur = this._preselect();
+    if (!id || !cur) return;
+    const next = { ...cur, ...change };
+    // every option is either switched on or off, so the automation sets all of them
+    next.off = OPTIONS.filter((o) => !next.on.includes(o));
+    try {
+      await this._hass.callService("input_text", "set_value", { entity_id: id, value: JSON.stringify(next) });
+    } catch (err) {
+      this._error = this._t("error", { msg: err?.message || err });
+      this._refresh();
+    }
+  }
+
+  _togglePreselectOption(o) {
+    const cur = this._preselect();
+    if (!cur) return;
+    const on = cur.on.includes(o) ? cur.on.filter((x) => x !== o) : [...cur.on, o];
+    this._writePreselect({ on });
+  }
+
+  _preselectBlock() {
+    const cfg = this._preselect();
+    if (!cfg) return "";
+    const options = this._st("selected")?.attributes?.options || [];
+    const program = `<select data-act="pre-program" aria-label="${this._t("program")}">
+        ${cfg.program ? "" : `<option value="" selected>–</option>`}
+        ${options.map((o) => `<option value="${esc(o)}" ${cfg.program === o ? "selected" : ""}>${esc(this._programName(o))}</option>`).join("")}
+      </select>`;
+    const chips = OPTIONS.filter((o) => this._dev.e[`opt_${o}`])
+      .map((o) => {
+        const on = cfg.on.includes(o);
+        return `<button class="chip toggle ${on ? "on" : ""}" data-act="pre-opt" data-opt="${o}" role="switch" aria-checked="${on}">
+          <ha-icon icon="mdi:${on ? "check" : "plus"}"></ha-icon>${this._t(`o_${o}`)}</button>`;
+      })
+      .join("");
+    return `<div class="pre"><div class="pre-title">${this._t("preselect")}</div>
+      <div class="pre-hint">${this._t("preselect_hint")}</div>${program}<div class="chips">${chips}</div></div>`;
   }
 
   // Middle of the delayed-start stepper: a native picker (a wheel on iOS) in DELAY_STEP_MIN steps.
@@ -1107,6 +1339,26 @@ class DishwasherCard extends HTMLElement {
         padding: 0 2px; width: auto; flex: 1; min-width: 0; text-align: center; text-align-last: center; font-size: 13px;
         color: var(--primary-text-color); font-variant-numeric: tabular-nums; cursor: pointer; }
       .hints { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+      /* folds: care and settings */
+      .fold { margin-top: 12px; padding: 0 12px; border-radius: var(--ha-card-border-radius, 12px); background: var(--secondary-background-color); }
+      .fold-toggle { all: unset; box-sizing: border-box; width: 100%; min-height: 40px; display: flex; align-items: center;
+        justify-content: space-between; cursor: pointer; font-size: 14px; font-weight: 500; }
+      .fold-toggle:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+      .fold-toggle ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
+      .fold-body { padding: 0 0 12px; display: flex; flex-direction: column; gap: 8px; }
+      .fold-body .chip { align-self: flex-start; }
+      .kvs { display: flex; flex-direction: column; }
+      .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; }
+      .kv span:first-child { color: var(--secondary-text-color); }
+      .cs { display: inline-flex; align-items: center; gap: 6px; }
+      .cs::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cs); }
+      .setting { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; font-size: 13px; }
+      .setting span { color: var(--secondary-text-color); }
+      .setting select { min-height: 34px; }
+      .pre { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--divider-color); }
+      .pre-title { font-size: 14px; font-weight: 500; }
+      .pre-hint { font-size: 12px; color: var(--secondary-text-color); }
+      .pre .chips { margin-top: 0; }
       .hint { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; min-height: 36px;
         padding: 0 4px 0 10px; border-radius: 10px; font-size: 14px;
         background: color-mix(in srgb, var(--hint) 14%, var(--card-background-color)); }

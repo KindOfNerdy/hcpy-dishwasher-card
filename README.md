@@ -54,8 +54,9 @@ type: custom:hcpy-dishwasher-card
 | `starter_entity` | – | An extra `input_boolean` or `switch` shown next to the options while no program runs, e.g. for an automation of your own that starts the dishwasher later |
 | `starter_name` | entity name | Name shown for that switch |
 | `starter_icon` | entity icon | Icon shown for that switch |
+| `preselect_entity` | – | Text helper for the preselection when switched on (see below); shows that part in the settings fold |
 | `start_options` | – | Options switched on before every start and after choosing another program, if the program allows them: `extradry`, `halfload`, `variospeedplus` |
-| `hide` | – | Parts to hide: `options`, `hints`, `door` |
+| `hide` | – | Parts to hide: `options`, `program` (program and delayed start), `hints`, `door`, `care`, `settings`, `controls` (all buttons, drop-downs and chips – a display only) |
 | `tap_action`, `hold_action` | more-info, – | Row only: what tapping or holding the row does (standard Home Assistant actions) |
 
 A row that opens a pop-up with the full card:
@@ -90,6 +91,26 @@ The card shows what is set on the dishwasher – program, options and delayed st
    ```
 
 The dishwasher needs remote start allowed and a closed door. If something is missing when it is time to start, the automation says why instead of failing silently.
+
+## Preselect when switched on
+
+Want the same program and options every time the dishwasher is switched on – at the machine or from the card? Keep them in a text helper, set them in the card and let a second blueprint apply them.
+
+1. Create a text helper (maximum length 255), for example "Dishwasher preselection":
+
+   [![Open your Home Assistant instance and show your helper entities.](https://my.home-assistant.io/badges/helpers.svg)](https://my.home-assistant.io/redirect/helpers/)
+
+2. Import the blueprint:
+
+   [![Open your Home Assistant instance and show the blueprint import dialog with this blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FKindOfNerdy%2Fhcpy-dishwasher-card%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fhcpy_dishwasher_preselect_when_on.yaml)
+
+3. Create an automation from it: pick the helper and the dishwasher entities from hcpy. Optionally skip it while somebody is away, and give it the helper of "start when nobody is home" so it leaves an armed start alone.
+4. Add the helper to the card; the settings fold then has a "Preselection when switched on" part:
+
+   ```yaml
+   type: custom:hcpy-dishwasher-card
+   preselect_entity: input_text.dishwasher_preselection
+   ```
 
 ## Thanks
 

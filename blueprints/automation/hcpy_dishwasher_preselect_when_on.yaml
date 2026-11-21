@@ -1,0 +1,155 @@
+blueprint:
+  name: Dishwasher – preselect when switched on (hcpy)
+  description: >-
+    When a Bosch or Siemens dishwasher connected through hcpy (HomeConnect2MQTT)
+    is switched on, this selects a program and switches options on or off –
+    as set in the "Preselection when switched on" part of the hcpy Dishwasher
+    Card, which keeps it in a text helper.
+
+
+    The program is chosen first and the options afterwards, because the
+    dishwasher resets the options when the program changes. Nothing is changed
+    while a "start when nobody is home" is armed, so what was set for that start
+    stays as it is.
+  domain: automation
+  author: KindOfNerdy
+  homeassistant:
+    min_version: "2024.10.0"
+  source_url: https://github.com/KindOfNerdy/hcpy-dishwasher-card/blob/main/blueprints/automation/hcpy_dishwasher_preselect_when_on.yaml
+  input:
+    preselect:
+      name: Preselection helper
+      description: >-
+        A text helper (input_text, 255 characters). The card writes the
+        preselection into it; set it in the card as `preselect_entity`.
+      selector:
+        entity:
+          filter:
+            - domain: input_text
+    dishwasher:
+      name: Dishwasher
+      description: The entities hcpy creates for the dishwasher.
+      input:
+        power:
+          name: Power
+          description: Switch PowerState
+          selector:
+            entity:
+              filter:
+                - domain: switch
+        selected_program:
+          name: Selected program
+          description: Select SelectedProgram
+          selector:
+            entity:
+              filter:
+                - domain: select
+        extradry:
+          name: Extra dry (optional)
+          description: Switch of the option ExtraDry
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: switch
+        halfload:
+          name: Half load (optional)
+          description: Switch of the option HalfLoad
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: switch
+        variospeedplus:
+          name: VarioSpeed (optional)
+          description: Switch of the option VarioSpeedPlus
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: switch
+    conditions:
+      name: Conditions (optional)
+      collapsed: true
+      input:
+        starter:
+          name: Helper of "start when nobody is home"
+          description: While it is on, the preselection is skipped.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: input_boolean
+        presence:
+          name: Only when somebody is home
+          description: >-
+            Skip the preselection when this entity is off, not_home or 0 (a
+            person, a group, the home zone …). Leave empty to always preselect.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: [person, group, zone, binary_sensor, input_boolean]
+
+mode: restart
+
+variables:
+  preselect: !input preselect
+  selected_program: !input selected_program
+  starter: !input starter
+  presence: !input presence
+  option_entities:
+    extradry: !input extradry
+    halfload: !input halfload
+    variospeedplus: !input variospeedplus
+  config: "{{ states(preselect) | from_json(default={}) if states(preselect) not in ['unknown', 'unavailable', ''] else {} }}"
+
+triggers:
+  - trigger: state
+    entity_id: !input power
+    from: "off"
+    to: "on"
+
+conditions:
+  - condition: template
+    value_template: "{{ config.get('program', '') != '' or (config.get('on', []) | length) > 0 }}"
+  - condition: template
+    value_template: "{{ starter == '' or not is_state(starter, 'on') }}"
+  - condition: template
+    value_template: "{{ presence == '' or states(presence) not in ['off', 'not_home', '0'] }}"
+
+actions:
+  # Program first: changing it resets the options on the dishwasher.
+  - if:
+      - condition: template
+        value_template: "{{ config.get('program', '') != '' and states(selected_program) != config.get('program') }}"
+    then:
+      - action: select.select_option
+        target:
+          entity_id: !input selected_program
+        data:
+          option: "{{ config.get('program') }}"
+      - wait_template: "{{ is_state(selected_program, config.get('program')) }}"
+        timeout:
+          seconds: 15
+  - variables:
+      # option names → the switches given above; names without a switch are skipped
+      switch_on: >-
+        {% set ns = namespace(l=[]) %}{% for o in config.get('on', []) if option_entities.get(o) %}{% set ns.l = ns.l + [option_entities[o]] %}{% endfor %}{{ ns.l }}
+      switch_off: >-
+        {% set ns = namespace(l=[]) %}{% for o in config.get('off', []) if option_entities.get(o) %}{% set ns.l = ns.l + [option_entities[o]] %}{% endfor %}{{ ns.l }}
+  # Options the program does not allow are ignored by the dishwasher.
+  - if:
+      - condition: template
+        value_template: "{{ switch_on | length > 0 }}"
+    then:
+      - action: switch.turn_on
+        target:
+          entity_id: "{{ switch_on }}"
+  - if:
+      - condition: template
+        value_template: "{{ switch_off | length > 0 }}"
+    then:
+      - action: switch.turn_off
+        target:
+          entity_id: "{{ switch_off }}"

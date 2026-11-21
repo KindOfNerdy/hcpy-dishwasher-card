@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4
+- Options can also be chosen while the dishwasher is off
+- `hide`: also `program` (program and delayed start) and `controls` (display only)
+- Care fold: salt, rinse aid, machine care and filter at a glance, programs started, preselect machine care when due
+- Settings fold: rinse aid dosage, water hardness, turbidity sensor, water connection, program when switched on
+- Preselection when switched on: set in the card (`preselect_entity`), applied by a second blueprint
+- "Start when nobody is home" blueprint: the helper stays on until the start is done, so the preselection does not interfere
+
 ## 0.1.3
 - Program and delayed start can also be chosen while the dishwasher is off; a note if it does not take the program
 - The open door is only shown while the dishwasher is on

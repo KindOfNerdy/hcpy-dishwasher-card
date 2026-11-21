@@ -6,8 +6,9 @@ blueprint:
     options and delayed start (for example chosen in the hcpy Dishwasher Card).
 
 
-    Arm it by switching a toggle helper on. Switching the helper off before
-    everyone has left cancels the start. Show the helper in the card with
+    Arm it by switching a toggle helper on; it switches off again once the
+    start is done. Switching the helper off before everyone has left cancels
+    the start. Show the helper in the card with
     `starter_entity`.
   domain: automation
   author: KindOfNerdy
@@ -133,9 +134,8 @@ actions:
     then:
       - stop: Start cancelled (helper switched off)
 
-  - action: input_boolean.turn_off
-    target:
-      entity_id: !input starter
+  # The helper stays on until the start is done, so a "preselect when switched on"
+  # automation leaves the settings for this start alone.
   - if:
       - condition: template
         value_template: "{{ is_state(power, 'off') }}"
@@ -160,6 +160,9 @@ actions:
       - condition: template
         value_template: "{{ message | length > 0 }}"
     then:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: !input starter
       - choose: []
         default: !input problem_action
       - stop: Start conditions not met
@@ -174,6 +177,9 @@ actions:
   - wait_template: "{{ states(operation_state) in ['Run', 'DelayedStart'] }}"
     timeout:
       seconds: 60
+  - action: input_boolean.turn_off
+    target:
+      entity_id: !input starter
   - if:
       - condition: template
         value_template: "{{ wait.completed }}"
