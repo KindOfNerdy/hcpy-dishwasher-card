@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+- Care: machine care and filter show "due" / "check" like the hints, in the warning color
+- The card updates again right after something is picked in a drop-down
+- Messages such as "did not take it" show right below the state, next to the controls, so they are seen on small screens
+
 ## 0.1.4
 - Options can also be chosen while the dishwasher is off
 - `hide`: also `program` (program and delayed start) and `controls` (display only)

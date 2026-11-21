@@ -7,7 +7,7 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.4";
+const CARD_VERSION = "0.1.5";
 const MODES = ["full", "row"];
 const PARTS = ["options", "program", "hints", "door", "care", "settings", "controls"];
 
@@ -201,7 +201,7 @@ const TEXT = {
     cs_low: "Nearly empty",
     cs_empty: "Empty",
     cs_due: "Due",
-    cs_soon: "Due soon",
+    cs_check: "Check",
     started_count: "Programs started",
     care_program: "Preselect machine care",
     settings: "Settings",
@@ -330,7 +330,7 @@ const TEXT = {
     cs_low: "Fast leer",
     cs_empty: "Leer",
     cs_due: "Fällig",
-    cs_soon: "Bald fällig",
+    cs_check: "Prüfen",
     started_count: "Gestartete Programme",
     care_program: "Maschinenpflege vorwählen",
     settings: "Einstellungen",
@@ -425,6 +425,9 @@ class DishwasherCard extends HTMLElement {
       this.shadowRoot.addEventListener(ev, () => clearTimeout(this._holdTimer), true);
     }
     this.shadowRoot.addEventListener("change", (e) => {
+      // a picked drop-down lets go at once: while it has focus the card holds still (see focusin)
+      const picked = e.target;
+      if (picked.matches?.("select")) setTimeout(() => picked.blur(), 0);
       if (e.target.matches?.("select[data-act='program']") && e.target.value) this._chooseProgram(e.target.value);
       if (e.target.matches?.("select[data-act='setting']") && e.target.value) {
         const id = e.target.dataset.entity;
@@ -1083,7 +1086,8 @@ class DishwasherCard extends HTMLElement {
     const hintBox = hints ? `<div class="hints">${hints}</div>` : "";
     const err = this._error ? `<div class="msg" role="alert">${esc(this._error)}</div>` : "";
     const folds = view.offline ? "" : this._careFold(view) + this._settingsFold(view);
-    return `<ha-card><div class="dev">${head}${startHint}${setup}${chipRow}${hintBox}${folds}</div>${err}</ha-card>`;
+    // the message sits right below the head, next to the controls it is about, so it is seen on a small screen too
+    return `<ha-card><div class="dev">${head}${err}${startHint}${setup}${chipRow}${hintBox}${folds}</div></ha-card>`;
   }
 
   // A fold: closed by default, a clickable title row.
@@ -1102,14 +1106,16 @@ class DishwasherCard extends HTMLElement {
     const rows = [];
     for (const [key, empty, low] of CARE) {
       if (!this._dev.e[`h_${empty}`] && !this._dev.e[`h_${low}`]) continue;
+      // salt and rinse aid run empty (red when empty); machine care and filter are just due (warning)
       const due = key === "machine_care" || key === "filter";
+      const dueText = key === "filter" ? "cs_check" : "cs_due";
       let state = "cs_ok";
       let color = "var(--success-color)";
       if (this._hintState(empty) === "Present") {
-        state = due ? "cs_due" : "cs_empty";
-        color = "var(--error-color)";
+        state = due ? dueText : "cs_empty";
+        color = due ? "var(--warning-color)" : "var(--error-color)";
       } else if (this._hintState(low) === "Present") {
-        state = due ? "cs_soon" : "cs_low";
+        state = due ? dueText : "cs_low";
         color = "var(--warning-color)";
       }
       rows.push(`<div class="kv"><span>${this._t(`c_${key}`)}</span><span class="cs" style="--cs:${color}">${this._t(state)}</span></div>`);
