@@ -7,7 +7,7 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.5";
+const CARD_VERSION = "0.1.6";
 const MODES = ["full", "row"];
 const PARTS = ["options", "program", "hints", "door", "care", "settings", "controls"];
 
