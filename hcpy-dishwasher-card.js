@@ -7,7 +7,7 @@
  * only from the Home Assistant theme.
  */
 
-const CARD_VERSION = "0.1.6";
+const CARD_VERSION = "0.1.7";
 const MODES = ["full", "row"];
 const PARTS = ["options", "program", "hints", "door", "care", "settings", "controls"];
 
@@ -973,7 +973,7 @@ class DishwasherCard extends HTMLElement {
     const busy = !!this._busy.abort;
     const ask = this._confirm;
     const label = this._t(ask ? "abort_confirm" : "abort");
-    return `<button class="main ${ask ? "ask" : ""}" data-act="abort" ${busy ? "disabled" : ""} title="${label}" aria-label="${label}">
+    return `<button class="main ${ask ? "ask" : ""}" data-act="abort" ${busy ? "disabled" : ""} title="${esc(label)}" aria-label="${esc(label)}">
       ${busy ? this._spinner() : `<ha-icon icon="mdi:${ask ? "help" : "stop"}"></ha-icon>`}</button>`;
   }
 
@@ -987,8 +987,8 @@ class DishwasherCard extends HTMLElement {
   _btn(act, icon, label, cls, entity = "") {
     const busy = !!this._busy[act];
     const text = this._t(label);
-    return `<button class="main ${cls}" data-act="${act}" ${entity ? `data-entity="${entity}"` : ""} ${busy ? "disabled" : ""}
-      title="${text}" aria-label="${text}">${busy ? this._spinner() : `<ha-icon icon="${icon}"></ha-icon>`}</button>`;
+    return `<button class="main ${cls}" data-act="${act}" ${entity ? `data-entity="${esc(entity)}"` : ""} ${busy ? "disabled" : ""}
+      title="${esc(text)}" aria-label="${esc(text)}">${busy ? this._spinner() : `<ha-icon icon="${esc(icon)}"></ha-icon>`}</button>`;
   }
 
   _bar(progress, label) {
@@ -1018,8 +1018,8 @@ class DishwasherCard extends HTMLElement {
     if (!st || OFF.includes(st.state)) return "";
     const on = st.state === "on";
     const busy = !!this._busy[id];
-    const sym = busy ? this._spinner() : `<ha-icon icon="${icon || `mdi:${on ? "check" : "plus"}`}"></ha-icon>`;
-    return `<button class="chip toggle ${on ? "on" : ""}" data-act="toggle" data-entity="${id}" role="switch"
+    const sym = busy ? this._spinner() : `<ha-icon icon="${esc(icon || `mdi:${on ? "check" : "plus"}`)}"></ha-icon>`;
+    return `<button class="chip toggle ${on ? "on" : ""}" data-act="toggle" data-entity="${esc(id)}" role="switch"
       aria-checked="${on}" ${busy ? "disabled" : ""}>${sym}${esc(label)}</button>`;
   }
 
@@ -1152,7 +1152,7 @@ class DishwasherCard extends HTMLElement {
       const id = st.entity_id;
       const wait = !!this._busy[id];
       return `<label class="setting"><span>${this._t(role)}</span>
-        <select data-act="setting" data-entity="${id}" ${busy || wait ? "disabled" : ""} aria-label="${this._t(role)}">
+        <select data-act="setting" data-entity="${esc(id)}" ${busy || wait ? "disabled" : ""} aria-label="${esc(this._t(role))}">
           ${options.map((o) => `<option value="${esc(o)}" ${st.state === o ? "selected" : ""}>${esc(this._settingLabel(o))}</option>`).join("")}
         </select></label>`;
     }).join("");
@@ -1264,7 +1264,7 @@ class DishwasherCard extends HTMLElement {
     if (hint) line += ` · <span style="color:${HINT_COLOR[hint.level]}">${esc(this._t(`h_${hint.name}`))}</span>`;
     const err = this._error ? `<div class="msg" role="alert">${esc(this._error)}</div>` : "";
     return `
-      <ha-card class="tile" data-tap="${dev.e.state}" role="button" tabindex="0" aria-label="${esc(dev.name)}"><div class="t-in">
+      <ha-card class="tile" data-tap="${esc(dev.e.state)}" role="button" tabindex="0" aria-label="${esc(dev.name)}"><div class="t-in">
         ${this._icon(view)}
         <div class="text">
           <div class="r-name">${esc(dev.name)}</div>

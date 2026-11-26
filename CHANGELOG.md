@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.7
+- The icon of the starter chip and entity ids are escaped before they go into the card's HTML
+
 ## 0.1.5
 - Care: machine care and filter show "due" / "check" like the hints, in the warning color
 - The card updates again right after something is picked in a drop-down

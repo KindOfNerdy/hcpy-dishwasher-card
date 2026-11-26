@@ -22,6 +22,8 @@ Colors, fonts and texts follow your Home Assistant theme, your profile's primary
 
 ## Installation
 
+**From the catalog (review pending):** the card is submitted to the default catalog of the Marketplace / HACS. Once it is accepted, search for *hcpy Dishwasher Card* there and install it. Until then, add it as a custom repository:
+
 **Home Assistant 2026.11 and later (Marketplace):**
 
 1. Add the repository (*Add from link*, `https://github.com/KindOfNerdy/hcpy-dishwasher-card`):
