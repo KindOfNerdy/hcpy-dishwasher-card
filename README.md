@@ -22,19 +22,13 @@ Colors, fonts and texts follow your Home Assistant theme, your profile's primary
 
 ## Installation
 
-**From the catalog (review pending):** the card is submitted to the default catalog of the Marketplace / HACS. Once it is accepted, search for *hcpy Dishwasher Card* there and install it. Until then, add it as a custom repository:
+The card is in the default catalog of HACS. Search for *hcpy Dishwasher Card* and install it, or open it directly:
 
 **Home Assistant 2026.11 and later (Marketplace):**
 
-1. Add the repository (*Add from link*, `https://github.com/KindOfNerdy/hcpy-dishwasher-card`):
+[![Open your Home Assistant instance and open this repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=KindOfNerdy&repository=hcpy-dishwasher-card&category=plugin)
 
-   [![Open your Home Assistant instance and show your custom repositories in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repositories.svg)](https://my.home-assistant.io/redirect/marketplace_repositories/)
-
-2. Install the card:
-
-   [![Open your Home Assistant instance and open this repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=KindOfNerdy&repository=hcpy-dishwasher-card&category=plugin)
-
-**Earlier versions:** add the repository in HACS as a custom repository of type *Dashboard*, then download the card.
+**Earlier versions (HACS):**
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=KindOfNerdy&repository=hcpy-dishwasher-card&category=plugin)
 
